@@ -6,6 +6,8 @@ import io
 import requests
 import shutil
 import re
+import plotly.express as px
+import plotly.graph_objects as go
 from datetime import datetime, timedelta
 from base64 import b64decode
 
@@ -17,33 +19,26 @@ except Exception:
     GITHUB_AVAILABLE = False
 
 # ===============================
-# ⚙ إعدادات التطبيق - نظام مكبس القطن
+# ⚙ إعدادات التطبيق - نظام تتبع المصاريف
 # ===============================
 APP_CONFIG = {
     # إعدادات التطبيق العامة
-    "APP_TITLE": "نظام إدارة مكبس القطن",
-    "APP_ICON": "🏭",
+    "APP_TITLE": "نظام تتبع المصاريف الشخصية",
+    "APP_ICON": "💰",
     
     # إعدادات GitHub
-    "REPO_NAME": "mahmedabdallh123/luva",  # غيّر هذا لريبو الجديد
+    "REPO_NAME": "mahmedabdallh123/ــــــــ",
     "BRANCH": "main",
-    "FILE_PATH": "luva.xlsx",  # ملف البيانات الجديد
-    "LOCAL_FILE": "luva.xlsx",
+    "EXPENSES_FILE_PATH": "luva.xlsx",
+    "LOCAL_EXPENSES_FILE": "luva.xlsx",
     
     # إعدادات الأمان
     "MAX_ACTIVE_USERS": 5,
-    "SESSION_DURATION_MINUTES": 11,
-    
-    # إعدادات الورديات
-    "SHIFTS": {
-        "الاولي": {"start": 8, "end": 16},
-        "الثانيه": {"start": 16, "end": 24},
-        "الثالثه": {"start": 0, "end": 8}
-    },
+    "SESSION_DURATION_MINUTES": 120,
     
     # إعدادات الواجهة
-    "SHOW_TECH_SUPPORT_TO_ALL": False,
-    "CUSTOM_TABS": ["📥 إدخال البيانات", "📊 عرض الإحصائيات", "👥 إدارة المستخدمين", "📞 الدعم الفني"]
+    "SHOW_TECH_SUPPORT_TO_ALL": True,
+    "CUSTOM_TABS": ["💸 إضافة مصروف", "📊 عرض المصاريف", "📈 الإحصائيات والرسوم", "👥 إدارة المستخدمين", "📞 الدعم الفني"]
 }
 
 # ===============================
@@ -55,7 +50,7 @@ SESSION_DURATION = timedelta(minutes=APP_CONFIG["SESSION_DURATION_MINUTES"])
 MAX_ACTIVE_USERS = APP_CONFIG["MAX_ACTIVE_USERS"]
 
 # إنشاء رابط GitHub تلقائياً من الإعدادات
-GITHUB_EXCEL_URL = f"https://github.com/{APP_CONFIG['REPO_NAME'].split('/')[0]}/{APP_CONFIG['REPO_NAME'].split('/')[1]}/raw/{APP_CONFIG['BRANCH']}/{APP_CONFIG['FILE_PATH']}"
+EXPENSES_GITHUB_URL = f"https://github.com/{APP_CONFIG['REPO_NAME'].split('/')[0]}/{APP_CONFIG['REPO_NAME'].split('/')[1]}/raw/{APP_CONFIG['BRANCH']}/{APP_CONFIG['EXPENSES_FILE_PATH']}"
 
 # -------------------------------
 # 🧩 دوال مساعدة للملفات والحالة
@@ -63,7 +58,6 @@ GITHUB_EXCEL_URL = f"https://github.com/{APP_CONFIG['REPO_NAME'].split('/')[0]}/
 def load_users():
     """تحميل بيانات المستخدمين من ملف JSON"""
     if not os.path.exists(USERS_FILE):
-        # إنشاء المستخدمين الافتراضيين مع الصلاحيات المطلوبة
         default_users = {
             "admin": {
                 "password": "1111", 
@@ -75,13 +69,7 @@ def load_users():
                 "password": "12345", 
                 "role": "data_entry", 
                 "created_at": datetime.now().isoformat(),
-                "permissions": ["data_entry"]
-            },
-            "user2": {
-                "password": "99999", 
-                "role": "viewer", 
-                "created_at": datetime.now().isoformat(),
-                "permissions": ["view_stats"]
+                "permissions": ["data_entry", "view_stats"]
             }
         }
         with open(USERS_FILE, "w", encoding="utf-8") as f:
@@ -90,60 +78,11 @@ def load_users():
     try:
         with open(USERS_FILE, "r", encoding="utf-8") as f:
             users = json.load(f)
-            # التأكد من وجود جميع الحقول المطلوبة
-            for username, user_data in users.items():
-                if "role" not in user_data:
-                    # تحديد الدور بناءً على اسم المستخدم إذا لم يكن موجوداً
-                    if username == "admin":
-                        user_data["role"] = "admin"
-                        user_data["permissions"] = ["all"]
-                    elif username == "user1":
-                        user_data["role"] = "data_entry"
-                        user_data["permissions"] = ["data_entry"]
-                    elif username == "user2":
-                        user_data["role"] = "viewer"
-                        user_data["permissions"] = ["view_stats"]
-                    else:
-                        user_data["role"] = "viewer"
-                        user_data["permissions"] = ["view_stats"]
-                
-                if "permissions" not in user_data:
-                    # تعيين الصلاحيات الافتراضية بناءً على الدور
-                    if user_data["role"] == "admin":
-                        user_data["permissions"] = ["all"]
-                    elif user_data["role"] == "data_entry":
-                        user_data["permissions"] = ["data_entry"]
-                    elif user_data["role"] == "viewer":
-                        user_data["permissions"] = ["view_stats"]
-                    else:
-                        user_data["permissions"] = ["view_stats"]
-                        
-                if "created_at" not in user_data:
-                    user_data["created_at"] = datetime.now().isoformat()
-                    
             return users
     except Exception as e:
         st.error(f"❌ خطأ في ملف users.json: {e}")
-        # إرجاع المستخدمين الافتراضيين في حالة الخطأ
         return {
-            "admin": {
-                "password": "1111", 
-                "role": "admin", 
-                "created_at": datetime.now().isoformat(),
-                "permissions": ["all"]
-            },
-            "user1": {
-                "password": "12345", 
-                "role": "data_entry", 
-                "created_at": datetime.now().isoformat(),
-                "permissions": ["data_entry"]
-            },
-            "user2": {
-                "password": "99999", 
-                "role": "viewer", 
-                "created_at": datetime.now().isoformat(),
-                "permissions": ["view_stats"]
-            }
+            "admin": {"password": "1111", "role": "admin", "permissions": ["all"], "created_at": datetime.now().isoformat()}
         }
 
 def save_users(users):
@@ -214,9 +153,11 @@ def logout_action():
         state[username]["active"] = False
         state[username].pop("login_time", None)
         save_state(state)
-    keys = list(st.session_state.keys())
-    for k in keys:
-        st.session_state.pop(k, None)
+    
+    for key in list(st.session_state.keys()):
+        if key != "rerun":
+            st.session_state.pop(key)
+    
     st.rerun()
 
 # -------------------------------
@@ -225,6 +166,7 @@ def logout_action():
 def login_ui():
     users = load_users()
     state = cleanup_sessions(load_state())
+    
     if "logged_in" not in st.session_state:
         st.session_state.logged_in = False
         st.session_state.username = None
@@ -243,14 +185,13 @@ def login_ui():
     if not st.session_state.logged_in:
         if st.button("تسجيل الدخول"):
             if username_input in users and users[username_input]["password"] == password:
-                if username_input == "admin":
-                    pass
-                elif username_input in active_users:
+                if username_input in active_users and username_input != "admin":
                     st.warning("⚠ هذا المستخدم مسجل دخول بالفعل.")
                     return False
-                elif active_count >= MAX_ACTIVE_USERS:
+                elif active_count >= MAX_ACTIVE_USERS and username_input != "admin":
                     st.error("🚫 الحد الأقصى للمستخدمين المتصلين حالياً.")
                     return False
+                
                 state[username_input] = {"active": True, "login_time": datetime.now().isoformat()}
                 save_state(state)
                 st.session_state.logged_in = True
@@ -280,236 +221,102 @@ def login_ui():
 # -------------------------------
 # 🔄 طرق جلب الملف من GitHub
 # -------------------------------
-def fetch_from_github_requests():
-    """تحميل بإستخدام رابط RAW (requests)"""
+def fetch_expenses_from_github():
+    """تحميل ملف المصاريف من GitHub"""
     try:
-        response = requests.get(GITHUB_EXCEL_URL, stream=True, timeout=15)
+        response = requests.get(EXPENSES_GITHUB_URL, stream=True, timeout=30)
         response.raise_for_status()
-        with open(APP_CONFIG["LOCAL_FILE"], "wb") as f:
-            shutil.copyfileobj(response.raw, f)
-        try:
-            st.cache_data.clear()
-        except:
-            pass
-        return True
-    except Exception as e:
-        st.error(f"⚠ فشل التحديث من GitHub: {e}")
-        return False
-
-def fetch_from_github_api():
-    """تحميل عبر GitHub API"""
-    if not GITHUB_AVAILABLE:
-        return fetch_from_github_requests()
-    
-    try:
-        token = st.secrets.get("github", {}).get("token", None)
-        if not token:
-            return fetch_from_github_requests()
         
-        g = Github(token)
-        repo = g.get_repo(APP_CONFIG["REPO_NAME"])
-        file_content = repo.get_contents(APP_CONFIG["FILE_PATH"], ref=APP_CONFIG["BRANCH"])
-        content = b64decode(file_content.content)
-        with open(APP_CONFIG["LOCAL_FILE"], "wb") as f:
-            f.write(content)
+        with open(APP_CONFIG["LOCAL_EXPENSES_FILE"], "wb") as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:
+                    f.write(chunk)
+        
         try:
             st.cache_data.clear()
         except:
             pass
+            
         return True
     except Exception as e:
-        st.error(f"⚠ فشل تحميل الملف من GitHub: {e}")
+        st.error(f"⚠ فشل التحديث من GitHub: {str(e)}")
         return False
 
 # -------------------------------
 # 📂 تحميل البيانات
 # -------------------------------
-@st.cache_data(show_spinner=False)
-def load_cotton_data():
-    """تحميل بيانات مكبس القطن"""
-    if not os.path.exists(APP_CONFIG["LOCAL_FILE"]):
+@st.cache_data(show_spinner=False, ttl=300)
+def load_expenses_data():
+    """تحميل بيانات المصاريف"""
+    if not os.path.exists(APP_CONFIG["LOCAL_EXPENSES_FILE"]):
         # إنشاء ملف جديد إذا لم يكن موجوداً
-        create_new_cotton_file()
+        create_new_expenses_file()
         return pd.DataFrame()
     
     try:
-        df = pd.read_excel(APP_CONFIG["LOCAL_FILE"])
+        df = pd.read_excel(APP_CONFIG["LOCAL_EXPENSES_FILE"])
+        # تحويل التاريخ والوقت إذا كانا موجودين
+        if 'التاريخ' in df.columns:
+            df['التاريخ'] = pd.to_datetime(df['التاريخ']).dt.date
+        if 'الوقت' in df.columns:
+            df['الوقت'] = pd.to_datetime(df['الوقت']).dt.time
         return df
     except Exception as e:
-        st.error(f"❌ خطأ في تحميل البيانات: {e}")
+        st.error(f"❌ خطأ في تحميل بيانات المصاريف: {str(e)}")
         return pd.DataFrame()
 
-def create_new_cotton_file():
-    """إنشاء ملف بيانات جديد"""
+def create_new_expenses_file():
+    """إنشاء ملف مصاريف جديد"""
     try:
-        # تعريف الأعمدة بناءً على الصورة المرفقة
         columns = [
-            'التاريخ', 'الوقت', 'الوردية', 'المشرف', 'نوع البالة', 
-            'وزن البالة', 'ملاحظات'
+            'التاريخ', 'الوقت', 'فئة المصروف', 'المبلغ', 'الوصف', 'ملاحظات'
         ]
         df = pd.DataFrame(columns=columns)
-        df.to_excel(APP_CONFIG["LOCAL_FILE"], index=False)
+        df.to_excel(APP_CONFIG["LOCAL_EXPENSES_FILE"], index=False)
         return True
     except Exception as e:
-        st.error(f"❌ خطأ في إنشاء الملف: {e}")
+        st.error(f"❌ خطأ في إنشاء ملف المصاريف: {str(e)}")
         return False
 
 # -------------------------------
 # 🔁 حفظ البيانات
 # -------------------------------
-def save_cotton_data(df, commit_message="تحديث بيانات مكبس القطن"):
-    """حفظ البيانات إلى ملف Excel والرفع إلى GitHub"""
+def save_expenses_data(df, commit_message="تحديث بيانات المصاريف"):
+    """حفظ بيانات المصاريف إلى ملف Excel"""
     try:
-        df.to_excel(APP_CONFIG["LOCAL_FILE"], index=False)
+        df.to_excel(APP_CONFIG["LOCAL_EXPENSES_FILE"], index=False)
         
-        # امسح الكاش
         try:
             st.cache_data.clear()
         except:
             pass
 
-        # حاول الرفع إلى GitHub
-        token = st.secrets.get("github", {}).get("token", None)
-        if token and GITHUB_AVAILABLE:
-            try:
-                g = Github(token)
-                repo = g.get_repo(APP_CONFIG["REPO_NAME"])
-                with open(APP_CONFIG["LOCAL_FILE"], "rb") as f:
-                    content = f.read()
-
-                try:
-                    contents = repo.get_contents(APP_CONFIG["FILE_PATH"], ref=APP_CONFIG["BRANCH"])
-                    result = repo.update_file(
-                        path=APP_CONFIG["FILE_PATH"], 
-                        message=commit_message, 
-                        content=content, 
-                        sha=contents.sha, 
-                        branch=APP_CONFIG["BRANCH"]
-                    )
-                    st.success("✅ تم الحفظ والرفع إلى GitHub بنجاح")
-                except:
-                    result = repo.create_file(
-                        path=APP_CONFIG["FILE_PATH"], 
-                        message=commit_message, 
-                        content=content, 
-                        branch=APP_CONFIG["BRANCH"]
-                    )
-                    st.success("✅ تم إنشاء ملف جديد على GitHub")
-            except Exception as e:
-                st.warning(f"⚠ تم الحفظ محلياً فقط: {e}")
-        
         return True
     except Exception as e:
-        st.error(f"❌ خطأ في حفظ البيانات: {e}")
+        st.error(f"❌ خطأ في حفظ البيانات: {str(e)}")
         return False
 
-# -------------------------------
-# 🧮 دوال مساعدة للنظام
-# -------------------------------
-def get_current_shift():
-    """تحديد الوردية الحالية تلقائياً"""
+def add_expense_record(df, category, amount, description="", notes=""):
+    """إضافة سجل مصروف جديد"""
     now = datetime.now()
-    current_hour = now.hour
-    
-    for shift_name, shift_times in APP_CONFIG["SHIFTS"].items():
-        if shift_times["start"] <= current_hour < shift_times["end"]:
-            return shift_name
-    return "الثالثه"  # الوردية الثالثة من منتصف الليل إلى 8 صباحاً
-
-def get_supervisors():
-    """قائمة المشرفين"""
-    return ["انسT.A", "عبدالحميدT.B", "محمود فتحيT.C", "احمد عبالعزيزT.D"]
-
-def get_bale_types():
-    """أنواع البالات"""
-    return ["قماش", "تراب", "هبوه دست", "اسطبات تدویر", "برم", "برم انفاق", "بلاستيك",
-        "هبوه تنظيف", "انفاق", "شرق الغزل", "تمشيط غير مغلف", 
-        "تمشيط مغلف", "مكس", "كرد", "قطن خام","ملح"
-    ]
-
-def add_new_record(df, supervisor, bale_type, weight, notes="", manual_date=None, manual_shift=None):
-    """إضافة سجل جديد"""
-    now = datetime.now()
-    
-    # تحديد التاريخ والوردية بناءً على الإعدادات
-    if manual_date:
-        record_date = manual_date
-    else:
-        record_date = now.date()
-    
-    if manual_shift:
-        record_shift = manual_shift
-    else:
-        record_shift = get_current_shift()
     
     new_record = {
-        'التاريخ': record_date,
+        'التاريخ': now.date(),
         'الوقت': now.time(),
-        'الوردية': record_shift,
-        'المشرف': supervisor,
-        'نوع البالة': bale_type,
-        'وزن البالة': weight,
+        'فئة المصروف': category,
+        'المبلغ': amount,
+        'الوصف': description,
         'ملاحظات': notes
     }
     
     new_df = pd.concat([df, pd.DataFrame([new_record])], ignore_index=True)
     return new_record, new_df
 
-def generate_advanced_statistics(df, start_date, end_date, selected_shifts, selected_bale_types, calculate_percentage=False):
-    """توليد إحصائيات متقدمة مع خيارات تصفية متعددة"""
-    if df.empty:
-        return pd.DataFrame()
-    
-    # تحويل التاريخ لسلسلة نصية للمقارنة
-    df['التاريخ'] = pd.to_datetime(df['التاريخ']).dt.date
-    
-    # تصفية البيانات حسب الفترة
-    mask = (df['التاريخ'] >= start_date) & (df['التاريخ'] <= end_date)
-    filtered_df = df[mask]
-    
-    # تصفية حسب الورديات المختارة
-    if selected_shifts:
-        filtered_df = filtered_df[filtered_df['الوردية'].isin(selected_shifts)]
-    
-    # تصفية حسب أنواع البالات المختارة
-    if selected_bale_types:
-        filtered_df = filtered_df[filtered_df['نوع البالة'].isin(selected_bale_types)]
-    
-    if filtered_df.empty:
-        return pd.DataFrame()
-    
-    # إنشاء جدول إحصائي
-    stats = filtered_df.groupby('نوع البالة').agg({
-        'وزن البالة': ['count', 'sum', 'mean'],
-        'المشرف': 'first'
-    }).round(2)
-    
-    # إعادة تسمية الأعمدة
-    stats.columns = ['عدد البالات', 'إجمالي الوزن', 'متوسط الوزن', 'المشرف']
-    stats = stats.reset_index()
-    
-    # حساب النسبة المئوية إذا طلب المستخدم
-    if calculate_percentage:
-        # إيجاد وزن قطن الخام
-        cotton_weight = 0
-        cotton_mask = (df['التاريخ'] >= start_date) & (df['التاريخ'] <= end_date)
-        if selected_shifts:
-            cotton_mask = cotton_mask & (df['الوردية'].isin(selected_shifts))
-        cotton_data = df[cotton_mask & (df['نوع البالة'] == 'قطن خام')]
-        
-        if not cotton_data.empty:
-            cotton_weight = cotton_data['وزن البالة'].sum()
-        
-        # حساب النسبة المئوية لكل نوع
-        if cotton_weight > 0:
-            stats['النسبة المئوية %'] = ((stats['إجمالي الوزن'] / cotton_weight) * 100).round(2)
-        else:
-            stats['النسبة المئوية %'] = 0
-    
-    return stats
-
+# -------------------------------
+# 🧮 دوال مساعدة للنظام
+# -------------------------------
 def get_user_permissions(user_role, user_permissions):
-    """الحصول على صلاحيات المستخدم بناءً على الدور والصلاحيات"""
+    """الحصول على صلاحيات المستخدم"""
     if "all" in user_permissions:
         return {
             "can_input": True,
@@ -520,441 +327,543 @@ def get_user_permissions(user_role, user_permissions):
     elif "data_entry" in user_permissions:
         return {
             "can_input": True,
-            "can_view_stats": False,
+            "can_view_stats": True,
             "can_manage_users": False,
-            "can_see_tech_support": False
+            "can_see_tech_support": APP_CONFIG["SHOW_TECH_SUPPORT_TO_ALL"]
         }
-    elif "view_stats" in user_permissions:
+    else:  # viewer
         return {
             "can_input": False,
             "can_view_stats": True,
             "can_manage_users": False,
-            "can_see_tech_support": False
+            "can_see_tech_support": APP_CONFIG["SHOW_TECH_SUPPORT_TO_ALL"]
         }
-    else:
-        # صلاحيات افتراضية للعرض فقط
-        return {
-            "can_input": False,
-            "can_view_stats": True,
-            "can_manage_users": False,
-            "can_see_tech_support": False
-        }
+
+def get_expense_categories():
+    """الحصول على فئات المصاريف"""
+    default_categories = [
+        "طعام", "مواصلات", "سكن", "تعليم", "تسوق", "ترفيه",
+        "صحة", "فواتير", "ملابس", "سفر", "هدايا", "أخرى"
+    ]
+    return default_categories
+
+def generate_expense_statistics(df, start_date, end_date):
+    """توليد إحصائيات المصاريف"""
+    if df.empty:
+        return pd.DataFrame(), 0, 0
+    
+    # تصفية البيانات حسب الفترة
+    mask = (df['التاريخ'] >= start_date) & (df['التاريخ'] <= end_date)
+    filtered_df = df[mask]
+    
+    if filtered_df.empty:
+        return pd.DataFrame(), 0, 0
+    
+    # إحصائيات حسب الفئة
+    stats_by_category = filtered_df.groupby('فئة المصروف').agg({
+        'المبلغ': ['count', 'sum', 'mean']
+    }).round(2)
+    
+    stats_by_category.columns = ['عدد المصاريف', 'إجمالي المبلغ', 'متوسط المبلغ']
+    stats_by_category = stats_by_category.reset_index()
+    
+    # الإجماليات
+    total_expenses = filtered_df['المبلغ'].sum()
+    average_expense = filtered_df['المبلغ'].mean()
+    
+    return stats_by_category, total_expenses, average_expense
+
+def create_pie_chart(df, start_date, end_date):
+    """إنشاء رسم بياني دائري للمصاريف"""
+    if df.empty:
+        return None
+    
+    # تصفية البيانات حسب الفترة
+    mask = (df['التاريخ'] >= start_date) & (df['التاريخ'] <= end_date)
+    filtered_df = df[mask]
+    
+    if filtered_df.empty:
+        return None
+    
+    # تجميع البيانات حسب الفئة
+    category_totals = filtered_df.groupby('فئة المصروف')['المبلغ'].sum().reset_index()
+    
+    # إنشاء الرسم البياني الدائري
+    fig = px.pie(
+        category_totals, 
+        values='المبلغ', 
+        names='فئة المصروف',
+        title=f"توزيع المصاريف من {start_date} إلى {end_date}",
+        color_discrete_sequence=px.colors.qualitative.Set3
+    )
+    
+    fig.update_traces(
+        textposition='inside',
+        textinfo='percent+label+value',
+        hovertemplate='<b>%{label}</b><br>المبلغ: %{value:,.0f} جنيه<br>النسبة: %{percent}'
+    )
+    
+    fig.update_layout(
+        title_x=0.5,
+        title_font_size=16,
+        showlegend=True,
+        height=500
+    )
+    
+    return fig
+
+def create_monthly_trend_chart(df):
+    """إنشاء رسم بياني للمصاريف الشهرية"""
+    if df.empty:
+        return None
+    
+    # استخراج الشهر والسنة
+    df['الشهر'] = pd.to_datetime(df['التاريخ']).dt.to_period('M')
+    monthly_totals = df.groupby('الشهر')['المبلغ'].sum().reset_index()
+    monthly_totals['الشهر'] = monthly_totals['الشهر'].astype(str)
+    
+    # إنشاء الرسم البياني
+    fig = px.line(
+        monthly_totals,
+        x='الشهر',
+        y='المبلغ',
+        title='اتجاه المصاريف الشهرية',
+        markers=True
+    )
+    
+    fig.update_layout(
+        title_x=0.5,
+        xaxis_title='الشهر',
+        yaxis_title='المبلغ (جنيه)',
+        height=400
+    )
+    
+    return fig
 
 # -------------------------------
 # 🖥 الواجهة الرئيسية
 # -------------------------------
-# إعداد الصفحة
-st.set_page_config(page_title=APP_CONFIG["APP_TITLE"], layout="wide")
+def main():
+    st.set_page_config(
+        page_title=APP_CONFIG["APP_TITLE"], 
+        layout="wide",
+        initial_sidebar_state="expanded"
+    )
 
-# شريط تسجيل الدخول
-with st.sidebar:
-    st.header("👤 الجلسة")
-    if not st.session_state.get("logged_in"):
-        if not login_ui():
-            st.stop()
-    else:
-        state = cleanup_sessions(load_state())
-        username = st.session_state.username
-        user_role = st.session_state.user_role
-        rem = remaining_time(state, username)
-        if rem:
-            mins, secs = divmod(int(rem.total_seconds()), 60)
-            st.success(f"👋 {username} | الدور: {user_role} | ⏳ {mins:02d}:{secs:02d}")
+    # شريط تسجيل الدخول
+    with st.sidebar:
+        st.header("👤 الجلسة")
+        if not st.session_state.get("logged_in"):
+            if not login_ui():
+                return
         else:
+            state = cleanup_sessions(load_state())
+            username = st.session_state.username
+            user_role = st.session_state.user_role
+            rem = remaining_time(state, username)
+            if rem:
+                mins, secs = divmod(int(rem.total_seconds()), 60)
+                st.success(f"👋 {username} | الدور: {user_role} | ⏳ {mins:02d}:{secs:02d}")
+            else:
+                logout_action()
+
+        st.markdown("---")
+        st.write("🔧 أدوات النظام:")
+        
+        if st.button("🔄 تحديث الملف من GitHub"):
+            with st.spinner("جاري تحديث البيانات..."):
+                if fetch_expenses_from_github():
+                    st.success("✅ تم تحديث البيانات بنجاح")
+                    st.rerun()
+                else:
+                    st.error("❌ فشل تحديث البيانات")
+        
+        if st.button("🗑 مسح الكاش"):
+            try:
+                st.cache_data.clear()
+                st.success("✅ تم مسح الكاش بنجاح")
+                st.rerun()
+            except Exception as e:
+                st.error(f"❌ خطأ في مسح الكاش: {str(e)}")
+        
+        st.markdown("---")
+        if st.button("🚪 تسجيل الخروج"):
             logout_action()
 
-    st.markdown("---")
-    st.write("🔧 أدوات:")
-    if st.button("🔄 تحديث الملف من GitHub"):
-        if fetch_from_github_requests():
-            st.rerun()
+    # تحميل البيانات
+    expenses_df = load_expenses_data()
+
+    # واجهة التبويبات الرئيسية
+    st.title(f"{APP_CONFIG['APP_ICON']} {APP_CONFIG['APP_TITLE']}")
+
+    # التحقق من الصلاحيات
+    username = st.session_state.get("username")
+    user_role = st.session_state.get("user_role", "viewer")
+    user_permissions = st.session_state.get("user_permissions", ["view_stats"])
+    permissions = get_user_permissions(user_role, user_permissions)
+
+    # تحديد التبويبات بناءً على الصلاحيات
+    tab_names = ["📊 عرض المصاريف", "📈 الإحصائيات والرسوم"]
     
-    if st.button("🗑 مسح الكاش"):
-        try:
-            st.cache_data.clear()
-            st.rerun()
-        except Exception as e:
-            st.error(f"❌ خطأ في مسح الكاش: {e}")
+    if permissions["can_input"]:
+        tab_names.insert(0, "💸 إضافة مصروف")
     
-    st.markdown("---")
-    if st.button("🚪 تسجيل الخروج"):
-        logout_action()
-
-# تحميل البيانات
-cotton_df = load_cotton_data()
-
-# واجهة التبويبات الرئيسية
-st.title(f"{APP_CONFIG['APP_ICON']} {APP_CONFIG['APP_TITLE']}")
-
-# التحقق من الصلاحيات
-username = st.session_state.get("username")
-user_role = st.session_state.get("user_role", "viewer")
-user_permissions = st.session_state.get("user_permissions", ["view_stats"])
-permissions = get_user_permissions(user_role, user_permissions)
-
-# تحديد التبويبات بناءً على الصلاحيات
-if permissions["can_manage_users"]:  # admin
-    tabs = st.tabs(APP_CONFIG["CUSTOM_TABS"])
-elif permissions["can_input"]:  # data_entry user
-    tabs = st.tabs(["📥 إدخال البيانات"])
-elif permissions["can_view_stats"]:  # viewer user
-    tabs = st.tabs(["📊 عرض الإحصائيات"])
-else:
-    # إذا لم تكن هناك صلاحيات، نعرض تبويب الإحصائيات فقط
-    tabs = st.tabs(["📊 عرض الإحصائيات"])
-
-# -------------------------------
-# Tab 1: إدخال البيانات (للمستخدمين الذين لديهم صلاحية data_entry أو admin)
-# -------------------------------
-if permissions["can_input"] and len(tabs) > 0:
-    with tabs[0]:
-        st.header("📥 إدخال بيانات البالات")
-        
-        # معلومات الوردية الحالية
-        current_shift = get_current_shift()
-        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
-        st.info(f"الوردية الحالية: {current_shift} | الوقت: {current_time}")
-        
-        # إعدادات التاريخ والوردية (يدوي أو تلقائي)
-        st.subheader("⚙ إعدادات التاريخ والوردية")
-        
-        col_set1, col_set2 = st.columns(2)
-        
-        with col_set1:
-            use_auto_date = st.checkbox("استخدام التاريخ التلقائي", value=True, 
-                                       help="سيتم استخدام تاريخ الجهاز الحالي تلقائياً")
-        
-        with col_set2:
-            use_auto_shift = st.checkbox("استخدام الوردية التلقائية", value=True,
-                                        help="سيتم استخدام الوردية الحالية تلقائياً")
-        
-        # نموذج إدخال البيانات
-        with st.form("data_entry_form", clear_on_submit=True):
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                supervisor = st.selectbox("👨‍💼 اختر المشرف:", get_supervisors(), key="supervisor_select")
-                bale_type = st.selectbox("📦 اختر نوع البالة:", get_bale_types(), key="bale_type_select")
-                
-                # إظهار حقل التاريخ إذا كان يدوي
-                if not use_auto_date:
-                    manual_date = st.date_input("📅 اختر التاريخ:", value=datetime.now().date())
-                else:
-                    manual_date = None
-            
-            with col2:
-                weight = st.number_input("⚖ وزن البالة (كجم):", min_value=0.0, step=0.1, key="weight_input")
-                notes = st.text_input("📝 ملاحظات (اختياري):", key="notes_input")
-                
-                # إظهار حقل الوردية إذا كان يدوي
-                if not use_auto_shift:
-                    manual_shift = st.selectbox("🕐 اختر الوردية:", list(APP_CONFIG["SHIFTS"].keys()))
-                else:
-                    manual_shift = None
-            
-            submitted = st.form_submit_button("💾 حفظ البيانات")
-            
-            if submitted:
-                if weight <= 0:
-                    st.error("❌ يرجى إدخال وزن صحيح للبالة")
-                else:
-                    new_record, updated_df = add_new_record(
-                        cotton_df, supervisor, bale_type, weight, notes, 
-                        manual_date, manual_shift
-                    )
-                    
-                    # حفظ البيانات
-                    commit_msg = f"إضافة بالة {bale_type} وزن {weight} كجم بواسطة {supervisor}"
-                    if save_cotton_data(updated_df, commit_msg):
-                        st.success(f"✅ تم حفظ بيانات البالة بنجاح!")
-                        st.json({
-                            "نوع البالة": new_record['نوع البالة'],
-                            "الوزن": f"{new_record['وزن البالة']} كجم",
-                            "المشرف": new_record['المشرف'],
-                            "الوردية": new_record['الوردية'],
-                            "التاريخ": str(new_record['التاريخ']),
-                            "الوقت": str(new_record['الوقت'])
-                        })
-                        st.rerun()
-
-# -------------------------------
-# Tab 2: عرض الإحصائيات (للمستخدمين الذين لديهم صلاحية view_stats أو admin)
-# -------------------------------
-if permissions["can_view_stats"] and len(tabs) > (0 if permissions["can_input"] else 0):
-    # تحديد الفهرس الصحيح للتبويب
-    stats_tab_index = 1 if permissions["can_input"] and permissions["can_manage_users"] else (
-        0 if not permissions["can_input"] else 1
-    )
+    if permissions["can_manage_users"]:
+        tab_names.append("👥 إدارة المستخدمين")
     
-    # التأكد من أن الفهرس ضمن النطاق الصحيح
-    if stats_tab_index < len(tabs):
-        with tabs[stats_tab_index]:
-            st.header("📊 عرض الإحصائيات المتقدمة")
+    if permissions["can_see_tech_support"]:
+        tab_names.append("📞 الدعم الفني")
+
+    tabs = st.tabs(tab_names)
+
+    # -------------------------------
+    # Tab 1: إضافة مصروف
+    # -------------------------------
+    if permissions["can_input"] and "💸 إضافة مصروف" in tab_names:
+        tab_index = tab_names.index("💸 إضافة مصروف")
+        with tabs[tab_index]:
+            st.header("💸 إضافة مصروف جديد")
             
-            if cotton_df.empty:
-                st.warning("⚠ لا توجد بيانات لعرضها")
-            else:
-                # قسم التصفية المتقدمة
-                st.subheader("🔍 تصفية البيانات")
-                
+            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            st.info(f"🕒 سيتم تسجيل المصروف بتاريخ ووقت: {current_time}")
+            
+            with st.form("expense_entry_form", clear_on_submit=True):
                 col1, col2 = st.columns(2)
                 
                 with col1:
-                    # تحديد الفترة الزمنية
-                    start_date = st.date_input("من تاريخ:", value=datetime.now().date() - timedelta(days=7))
-                    end_date = st.date_input("إلى تاريخ:", value=datetime.now().date())
+                    category = st.selectbox(
+                        "📂 اختر فئة المصروف:",
+                        get_expense_categories(),
+                        key="category_select"
+                    )
                     
-                    # اختيار الورديات
-                    st.write("### 🕐 اختيار الورديات:")
-                    all_shifts = st.checkbox("جميع الورديات", value=True, key="all_shifts")
-                    if all_shifts:
-                        selected_shifts = list(APP_CONFIG["SHIFTS"].keys())
-                    else:
-                        selected_shifts = st.multiselect(
-                            "اختر الورديات:",
-                            list(APP_CONFIG["SHIFTS"].keys()),
-                            default=list(APP_CONFIG["SHIFTS"].keys())
-                        )
+                    custom_category = st.text_input(
+                        "أو اكتب فئة جديدة:",
+                        placeholder="اكتب فئة جديدة إذا لم تكن موجودة في القائمة"
+                    )
                 
                 with col2:
-                    # اختيار أنواع البالات
-                    st.write("### 📦 اختيار أنواع البالات:")
-                    all_bales = st.checkbox("جميع أنواع البالات", value=True, key="all_bales")
-                    if all_bales:
-                        selected_bale_types = get_bale_types()
-                    else:
-                        selected_bale_types = st.multiselect(
-                            "اختر أنواع البالات:",
-                            get_bale_types(),
-                            default=get_bale_types()
-                        )
+                    amount = st.number_input(
+                        "💰 المبلغ (جنيه):",
+                        min_value=0.0,
+                        step=1.0,
+                        key="amount_input"
+                    )
                     
-                    # خيارات إضافية
-                    st.write("### ⚙ خيارات إضافية:")
-                    calculate_percentage = st.checkbox(
-                        "حساب النسبة المئوية مقابل قطن خام", 
-                        value=True,
-                        help="سيتم حساب نسبة كل نوع من البالات مقابل إجمالي وزن قطن الخام"
+                    description = st.text_input(
+                        "📝 وصف المصروف:",
+                        placeholder="وصف مختصر للمصروف"
                     )
                 
-                if st.button("🔄 توليد الإحصائيات", type="primary"):
-                    # توليد وعرض الإحصائيات
-                    stats_df = generate_advanced_statistics(
-                        cotton_df, start_date, end_date, 
-                        selected_shifts, selected_bale_types, 
-                        calculate_percentage
-                    )
-                    
-                    if not stats_df.empty:
-                        st.subheader(f"📈 الإحصائيات للفترة من {start_date} إلى {end_date}")
-                        
-                        # عرض معلومات التصفية
-                        st.info(f"""
-                        *معلومات التصفية:*
-                        - الورديات: {', '.join(selected_shifts) if selected_shifts else 'جميع الورديات'}
-                        - أنواع البالات: {len(selected_bale_types)} نوع
-                        - حساب النسبة المئوية: {'نعم' if calculate_percentage else 'لا'}
-                        """)
-                        
-                        # عرض جدول الإحصائيات
-                        st.dataframe(stats_df, use_container_width=True)
-                        
-                        # إجماليات عامة
-                        total_bales = stats_df['عدد البالات'].sum()
-                        total_weight = stats_df['إجمالي الوزن'].sum()
-                        
-                        col1, col2, col3 = st.columns(3)
-                        with col1:
-                            st.metric("🔄 إجمالي عدد البالات", f"{total_bales:,}")
-                        with col2:
-                            st.metric("⚖ إجمالي الوزن", f"{total_weight:,.1f} كجم")
-                        with col3:
-                            avg_weight = total_weight / total_bales if total_bales > 0 else 0
-                            st.metric("📊 متوسط الوزن للبالة", f"{avg_weight:.1f} كجم")
-                        
-                        # عرض النسب المئوية إذا تم حسابها
-                        if calculate_percentage:
-                            st.subheader("📊 النسب المئوية مقابل قطن خام")
-                            
-                            # إنشاء مخطط للنسب المئوية
-                            if 'النسبة المئوية %' in stats_df.columns:
-                                # تصفية البيانات لإزالة قطن الخام من المخطط
-                                chart_data = stats_df[stats_df['نوع البالة'] != 'قطن خام']
-                                if not chart_data.empty:
-                                    # إنشاء مخطط شريطي للنسب المئوية
-                                    st.bar_chart(
-                                        chart_data.set_index('نوع البالة')['النسبة المئوية %']
-                                    )
-                            
-                            # عرض جدول مفصل للنسب
-                            percentage_df = stats_df[['نوع البالة', 'إجمالي الوزن', 'النسبة المئوية %']].copy()
-                            st.dataframe(percentage_df, use_container_width=True)
-                        
-                        # عرض البيانات الخام المصفاة
-                        st.subheader("📋 البيانات التفصيلية المصفاة")
-                        
-                        # تصفية البيانات الأصلية بنفس المعايير
-                        filtered_data = cotton_df.copy()
-                        filtered_data['التاريخ'] = pd.to_datetime(filtered_data['التاريخ']).dt.date
-                        mask = (filtered_data['التاريخ'] >= start_date) & (filtered_data['التاريخ'] <= end_date)
-                        
-                        if selected_shifts:
-                            mask = mask & (filtered_data['الوردية'].isin(selected_shifts))
-                        
-                        if selected_bale_types:
-                            mask = mask & (filtered_data['نوع البالة'].isin(selected_bale_types))
-                        
-                        detailed_data = filtered_data[mask]
-                        st.dataframe(detailed_data, use_container_width=True)
-                        
-                        # خيارات التصدير
-                        st.subheader("📥 تصدير البيانات")
-                        
-                        buffer = io.BytesIO()
-                        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                            stats_df.to_excel(writer, sheet_name='الإحصائيات', index=False)
-                            detailed_data.to_excel(writer, sheet_name='البيانات_التفصيلية', index=False)
-                            
-                            if calculate_percentage and 'النسبة المئوية %' in stats_df.columns:
-                                percentage_df.to_excel(writer, sheet_name='النسب_المئوية', index=False)
-                        
-                        st.download_button(
-                            label="📥 تحميل التقرير كملف Excel",
-                            data=buffer.getvalue(),
-                            file_name=f"تقرير_مكبس_القطن_{start_date}إلى{end_date}.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                        )
+                notes = st.text_area(
+                    "📋 ملاحظات إضافية:",
+                    placeholder="أي ملاحظات إضافية حول المصروف"
+                )
+                
+                submitted = st.form_submit_button("💾 حفظ المصروف")
+                
+                if submitted:
+                    if amount <= 0:
+                        st.error("❌ يرجى إدخال مبلغ صحيح أكبر من الصفر")
                     else:
-                        st.warning("⚠ لا توجد بيانات تطابق معايير التصفية المحددة")
+                        # استخدام الفئة المخصصة إذا تم إدخالها
+                        final_category = custom_category if custom_category.strip() else category
+                        
+                        new_record, updated_df = add_expense_record(
+                            expenses_df, final_category, amount, description, notes
+                        )
+                        
+                        if save_expenses_data(updated_df, f"إضافة مصروف {final_category}"):
+                            st.success(f"✅ تم حفظ المصروف بنجاح!")
+                            st.json({
+                                "الفئة": new_record['فئة المصروف'],
+                                "المبلغ": f"{new_record['المبلغ']:,.2f} جنيه",
+                                "التاريخ": str(new_record['التاريخ']),
+                                "الوقت": str(new_record['الوقت'])
+                            })
+                            st.rerun()
 
-# -------------------------------
-# Tab 3: إدارة المستخدمين (للمسؤول فقط)
-# -------------------------------
-if permissions["can_manage_users"] and len(tabs) > 2:
-    with tabs[2]:
-        st.header("👥 إدارة المستخدمين")
+    # -------------------------------
+    # Tab 2: عرض المصاريف
+    # -------------------------------
+    view_tab_index = tab_names.index("📊 عرض المصاريف")
+    with tabs[view_tab_index]:
+        st.header("📊 عرض المصاريف")
         
-        users = load_users()
-        
-        # عرض المستخدمين الحاليين
-        st.subheader("📋 المستخدمين الحاليين")
-        
-        if users:
-            user_data = []
-            for username, info in users.items():
-                user_data.append({
-                    "اسم المستخدم": username,
-                    "الدور": info.get("role", "user"),
-                    "الصلاحيات": ", ".join(info.get("permissions", [])),
-                    "تاريخ الإنشاء": info.get("created_at", "غير معروف")
-                })
-            
-            users_df = pd.DataFrame(user_data)
-            st.dataframe(users_df, use_container_width=True)
+        if expenses_df.empty:
+            st.warning("⚠ لا توجد مصاريف مسجلة حتى الآن.")
         else:
-            st.info("لا يوجد مستخدمين مسجلين بعد.")
-        
-        # إضافة مستخدم جديد
-        st.subheader("➕ إضافة مستخدم جديد")
-        
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            new_username = st.text_input("اسم المستخدم الجديد:")
-        with col2:
-            new_password = st.text_input("كلمة المرور:", type="password")
-        with col3:
-            user_role = st.selectbox("الدور:", ["admin", "data_entry", "viewer"])
-        
-        if st.button("إضافة مستخدم", key="add_user"):
-            if not new_username.strip() or not new_password.strip():
-                st.warning("⚠ الرجاء إدخال اسم المستخدم وكلمة المرور.")
-            elif new_username in users:
-                st.warning("⚠ هذا المستخدم موجود بالفعل.")
-            else:
-                # تحديد الصلاحيات بناءً على الدور
-                if user_role == "admin":
-                    permissions_list = ["all"]
-                elif user_role == "data_entry":
-                    permissions_list = ["data_entry"]
-                else:  # viewer
-                    permissions_list = ["view_stats"]
-                
-                users[new_username] = {
-                    "password": new_password,
-                    "role": user_role,
-                    "permissions": permissions_list,
-                    "created_at": datetime.now().isoformat()
-                }
-                if save_users(users):
-                    st.success(f"✅ تم إضافة المستخدم '{new_username}' بنجاح.")
-                    st.rerun()
-                else:
-                    st.error("❌ حدث خطأ أثناء حفظ بيانات المستخدم.")
-        
-        # حذف مستخدم
-        st.subheader("🗑 حذف مستخدم")
-        
-        if len(users) > 1:
-            user_to_delete = st.selectbox(
-                "اختر مستخدم للحذف:",
-                [u for u in users.keys() if u != "admin"],
-                key="delete_user_select"
-            )
+            # خيارات التصفية
+            st.subheader("🔍 تصفية البيانات")
             
             col1, col2 = st.columns(2)
+            
             with col1:
-                confirm_delete = st.checkbox("✅ تأكيد الحذف", key="confirm_user_delete")
+                start_date = st.date_input(
+                    "من تاريخ:",
+                    value=datetime.now().date() - timedelta(days=30),
+                    key="start_date"
+                )
+                
+                # تصفية حسب الفئة
+                all_categories = expenses_df['فئة المصروف'].unique()
+                selected_categories = st.multiselect(
+                    "اختر الفئات:",
+                    all_categories,
+                    default=all_categories
+                )
+            
             with col2:
-                if st.button("حذف المستخدم", key="delete_user_btn"):
-                    if not confirm_delete:
-                        st.warning("⚠ يرجى تأكيد الحذف أولاً.")
-                    elif user_to_delete == "admin":
-                        st.error("❌ لا يمكن حذف المستخدم admin.")
-                    elif user_to_delete == st.session_state.get("username"):
-                        st.error("❌ لا يمكن حذف حسابك أثناء تسجيل الدخول.")
+                end_date = st.date_input(
+                    "إلى تاريخ:",
+                    value=datetime.now().date(),
+                    key="end_date"
+                )
+                
+                # تصفية حسب المبلغ
+                min_amount = st.number_input(
+                    "أقل مبلغ:",
+                    min_value=0.0,
+                    value=0.0,
+                    step=10.0
+                )
+                
+                max_amount = st.number_input(
+                    "أعلى مبلغ:",
+                    min_value=0.0,
+                    value=float(expenses_df['المبلغ'].max()) if not expenses_df.empty else 1000.0,
+                    step=10.0
+                )
+            
+            # تطبيق التصفية
+            filtered_df = expenses_df.copy()
+            
+            # تصفية حسب التاريخ
+            filtered_df = filtered_df[
+                (filtered_df['التاريخ'] >= start_date) & 
+                (filtered_df['التاريخ'] <= end_date)
+            ]
+            
+            # تصفية حسب الفئة
+            if selected_categories:
+                filtered_df = filtered_df[filtered_df['فئة المصروف'].isin(selected_categories)]
+            
+            # تصفية حسب المبلغ
+            filtered_df = filtered_df[
+                (filtered_df['المبلغ'] >= min_amount) & 
+                (filtered_df['المبلغ'] <= max_amount)
+            ]
+            
+            if filtered_df.empty:
+                st.warning("⚠ لا توجد بيانات تطابق معايير التصفية")
+            else:
+                # عرض الإحصائيات السريعة
+                total_filtered = filtered_df['المبلغ'].sum()
+                avg_filtered = filtered_df['المبلغ'].mean()
+                count_filtered = len(filtered_df)
+                
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("إجمالي المصاريف", f"{total_filtered:,.2f} جنيه")
+                with col2:
+                    st.metric("متوسط المصروف", f"{avg_filtered:,.2f} جنيه")
+                with col3:
+                    st.metric("عدد المصاريف", count_filtered)
+                
+                # عرض البيانات
+                st.subheader("📋 بيانات المصاريف المصفاة")
+                st.dataframe(filtered_df, use_container_width=True, height=400)
+                
+                # خيارات التصدير
+                st.subheader("📥 تصدير البيانات")
+                
+                buffer = io.BytesIO()
+                with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                    filtered_df.to_excel(writer, sheet_name='المصاريف', index=False)
+                
+                st.download_button(
+                    label="📥 تحميل البيانات كملف Excel",
+                    data=buffer.getvalue(),
+                    file_name=f"المصاريف_{start_date}_إلى_{end_date}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+
+    # -------------------------------
+    # Tab 3: الإحصائيات والرسوم
+    # -------------------------------
+    stats_tab_index = tab_names.index("📈 الإحصائيات والرسوم")
+    with tabs[stats_tab_index]:
+        st.header("📈 الإحصائيات والرسوم البيانية")
+        
+        if expenses_df.empty:
+            st.warning("⚠ لا توجد بيانات لعرض الإحصائيات")
+        else:
+            # تحديد الفترة للإحصائيات
+            col1, col2 = st.columns(2)
+            with col1:
+                stats_start_date = st.date_input(
+                    "من تاريخ للإحصائيات:",
+                    value=datetime.now().date() - timedelta(days=30),
+                    key="stats_start"
+                )
+            with col2:
+                stats_end_date = st.date_input(
+                    "إلى تاريخ للإحصائيات:",
+                    value=datetime.now().date(),
+                    key="stats_end"
+                )
+            
+            # توليد الإحصائيات
+            stats_df, total_expenses, avg_expense = generate_expense_statistics(
+                expenses_df, stats_start_date, stats_end_date
+            )
+            
+            if not stats_df.empty:
+                # عرض الإحصائيات العددية
+                st.subheader("📊 الإحصائيات العددية")
+                
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("إجمالي المصاريف", f"{total_expenses:,.2f} جنيه")
+                with col2:
+                    st.metric("متوسط المصروف", f"{avg_expense:,.2f} جنيه")
+                with col3:
+                    st.metric("عدد المصاريف", len(stats_df))
+                with col4:
+                    st.metric("أعلى مصروف", f"{expenses_df['المبلغ'].max():,.2f} جنيه")
+                
+                # عرض جدول الإحصائيات
+                st.dataframe(stats_df, use_container_width=True)
+                
+                # الرسوم البيانية
+                st.subheader("📈 الرسوم البيانية")
+                
+                # الرسم البياني الدائري
+                pie_chart = create_pie_chart(expenses_df, stats_start_date, stats_end_date)
+                if pie_chart:
+                    st.plotly_chart(pie_chart, use_container_width=True)
+                
+                # الرسم البياني الشهري
+                monthly_chart = create_monthly_trend_chart(expenses_df)
+                if monthly_chart:
+                    st.plotly_chart(monthly_chart, use_container_width=True)
+                
+                # رسم بياني شريطي للفئات
+                if not stats_df.empty:
+                    bar_fig = px.bar(
+                        stats_df,
+                        x='فئة المصروف',
+                        y='إجمالي المبلغ',
+                        title='إجمالي المصاريف حسب الفئة',
+                        color='فئة المصروف',
+                        text='إجمالي المبلغ'
+                    )
+                    
+                    bar_fig.update_layout(
+                        title_x=0.5,
+                        xaxis_title='فئة المصروف',
+                        yaxis_title='المبلغ (جنيه)',
+                        height=400,
+                        showlegend=False
+                    )
+                    
+                    bar_fig.update_traces(
+                        texttemplate='%{text:,.0f}',
+                        textposition='outside'
+                    )
+                    
+                    st.plotly_chart(bar_fig, use_container_width=True)
+
+    # -------------------------------
+    # Tab إدارة المستخدمين
+    # -------------------------------
+    if permissions["can_manage_users"] and "👥 إدارة المستخدمين" in tab_names:
+        tab_index = tab_names.index("👥 إدارة المستخدمين")
+        with tabs[tab_index]:
+            st.header("👥 إدارة المستخدمين")
+            
+            users = load_users()
+            
+            # عرض المستخدمين الحاليين
+            st.subheader("📋 المستخدمين الحاليين")
+            if users:
+                user_data = []
+                for username, info in users.items():
+                    user_data.append({
+                        "اسم المستخدم": username,
+                        "الدور": info.get("role", "user"),
+                        "الصلاحيات": ", ".join(info.get("permissions", [])),
+                        "تاريخ الإنشاء": info.get("created_at", "غير معروف")
+                    })
+                
+                users_df = pd.DataFrame(user_data)
+                st.dataframe(users_df, use_container_width=True)
+            
+            # إضافة مستخدم جديد
+            st.subheader("➕ إضافة مستخدم جديد")
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                new_username = st.text_input("اسم المستخدم الجديد:")
+            with col2:
+                new_password = st.text_input("كلمة المرور:", type="password")
+            with col3:
+                user_role = st.selectbox("الدور:", ["admin", "data_entry", "viewer"])
+            
+            if st.button("إضافة مستخدم"):
+                if not new_username.strip() or not new_password.strip():
+                    st.warning("⚠ الرجاء إدخال اسم المستخدم وكلمة المرور.")
+                elif new_username in users:
+                    st.warning("⚠ هذا المستخدم موجود بالفعل.")
+                else:
+                    if user_role == "admin":
+                        permissions_list = ["all"]
+                    elif user_role == "data_entry":
+                        permissions_list = ["data_entry", "view_stats"]
                     else:
-                        if user_to_delete in users:
-                            del users[user_to_delete]
-                            if save_users(users):
-                                st.success(f"✅ تم حذف المستخدم '{user_to_delete}' بنجاح.")
-                                st.rerun()
-                            else:
-                                st.error("❌ حدث خطأ أثناء حفظ التغييرات.")
+                        permissions_list = ["view_stats"]
+                    
+                    users[new_username] = {
+                        "password": new_password,
+                        "role": user_role,
+                        "permissions": permissions_list,
+                        "created_at": datetime.now().isoformat()
+                    }
+                    if save_users(users):
+                        st.success(f"✅ تم إضافة المستخدم '{new_username}' بنجاح.")
+                        st.rerun()
 
-# -------------------------------
-# Tab 4: الدعم الفني (للمسؤول فقط أو إذا كان مسموحاً للجميع)
-# -------------------------------
-tech_support_tab_index = 3 if permissions["can_manage_users"] else (
-    1 if permissions["can_input"] and not permissions["can_manage_users"] else 1
-)
+    # -------------------------------
+    # Tab الدعم الفني
+    # -------------------------------
+    if permissions["can_see_tech_support"] and "📞 الدعم الفني" in tab_names:
+        tab_index = tab_names.index("📞 الدعم الفني")
+        with tabs[tab_index]:
+            st.header("📞 الدعم الفني")
+            
+            st.markdown("## 🛠 معلومات التطوير والدعم")
+            st.markdown("تم تطوير هذا التطبيق بواسطة:")
+            st.markdown("### م. محمد عبدالله")
+            st.markdown("### رئيس قسم الكرد والمحطات")
+            st.markdown("### مصنع بيل يارن للغزل")
+            st.markdown("---")
+            st.markdown("### معلومات الاتصال:")
+            st.markdown("- 📧 البريد الإلكتروني: m.abdallah@bailyarn.com")
+            st.markdown("- 📞 هاتف المصنع: 01000000000")
+            st.markdown("---")
+            st.markdown("### إصدار النظام:")
+            st.markdown("- الإصدار: 1.0")
+            st.markdown("- آخر تحديث: 2024")
+            st.markdown("- النظام: نظام تتبع المصاريف الشخصية")
+            
+            st.info("""
+            **ملاحظات مهمة:**
+            - النظام يساعدك على تتبع جميع مصاريفك اليومية
+            - يمكنك إضافة فئات مصاريف مخصصة حسب احتياجاتك
+            - الرسوم البيانية تساعدك على فهم أنماط صرفك
+            - في حالة وجود أي مشاكل، يرجى التواصل مع الدعم الفني
+            """)
 
-if ((permissions["can_manage_users"] and len(tabs) > 3) or 
-    (permissions["can_see_tech_support"] and len(tabs) > tech_support_tab_index)):
-    
-    with tabs[tech_support_tab_index]:
-        st.header("📞 الدعم الفني")
-        
-        st.markdown("## 🛠 معلومات التطوير والدعم")
-        st.markdown("تم تطوير هذا التطبيق بواسطة:")
-        st.markdown("### م. محمد عبدالله")
-        st.markdown("### رئيس قسم الكرد والمحطات")
-        st.markdown("### مصنع بيل يارن للغزل")
-        st.markdown("---")
-        st.markdown("### معلومات الاتصال:")
-        st.markdown("- 📧 البريد الإلكتروني: medotatch124@gmail.com")
-        st.markdown("- 📞 هاتف :01274424062")
-        st.markdown("- 🏢 الموقع: مصنع بيل يارن للغزل")
-        st.markdown("---")
-        st.markdown("### خدمات الدعم الفني:")
-        st.markdown("- 🔧 صيانة وتحديث النظام")
-        st.markdown("- 📊 تطوير تقارير إضافية")
-        st.markdown("- 🐛 إصلاح الأخطاء والمشكلات")
-        st.markdown("- 💡 استشارات فنية وتقنية")
-        st.markdown("---")
-        st.markdown("### إصدار النظام:")
-        st.markdown("- الإصدار: 1.0")
-        st.markdown("- آخر تحديث: 2024")
-        st.markdown("- النظام: نظام إدارة مكبس القطن")
-        
-        st.info("ملاحظة: في حالة مواجهة أي مشاكل تقنية أو تحتاج إلى إضافة ميزات جديدة، يرجى التواصل مع قسم الدعم الفني.")
+# التشغيل الرئيسي للتطبيق
+if __name__ == "__main__":
+    main()

@@ -27,7 +27,7 @@ APP_CONFIG = {
     "APP_ICON": "💰",
     
     # إعدادات GitHub
-    "REPO_NAME": "mahmedabdallh123/ــــــــ",
+    "REPO_NAME": "mahmedabdallh123/--------",
     "BRANCH": "main",
     "EXPENSES_FILE_PATH": "luva.xlsx",
     "LOCAL_EXPENSES_FILE": "luva.xlsx",
@@ -684,7 +684,7 @@ def main():
                 st.download_button(
                     label="📥 تحميل البيانات كملف Excel",
                     data=buffer.getvalue(),
-                    file_name=f"المصاريف_{start_date}_إلى_{end_date}.xlsx",
+                    file_name=f"المصاريف_{start_date}إلى{end_date}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
 
@@ -857,7 +857,7 @@ def main():
             st.markdown("- النظام: نظام تتبع المصاريف الشخصية")
             
             st.info("""
-            **ملاحظات مهمة:**
+            *ملاحظات مهمة:*
             - النظام يساعدك على تتبع جميع مصاريفك اليومية
             - يمكنك إضافة فئات مصاريف مخصصة حسب احتياجاتك
             - الرسوم البيانية تساعدك على فهم أنماط صرفك
@@ -865,5 +865,5 @@ def main():
             """)
 
 # التشغيل الرئيسي للتطبيق
-if __name__ == "__main__":
+if _name_ == "_main_":
     main()
